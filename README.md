@@ -43,6 +43,7 @@ This prototype emphasizes traceability, data provenance, and explainability in L
 🧰 Prerequisites
 
 * LM Studio (installed and running locally or on LAN)
+* Model required - Gpt-OSS-20b
 * Model loaded (e.g., `openai/gpt-oss-20b` or similar)
 * Browser: Chrome / Firefox
 * Python 3 (for quick local hosting) *or* Node.js (for `http-server`)
@@ -54,8 +55,8 @@ Ensure LM Studio is set up as follows:
 | Setting                    | Recommended Value                                |
 | -------------------------- | ------------------------------------------------ |
 |   Server Port              | `8880` or `5500` (use what your LM Studio shows) |
-|   Serve on Local Network   | ✅ ON (if frontend runs on another device)        |
-|   Enable CORS              | ✅ ON                                             |
+|   Serve on Local Network   | ✅ ON (if frontend runs on another device)       |
+|   Enable CORS              | ✅ ON                                            |
 |   Reachable URL            | e.g. `http://192.168.29.200:8880`                |
 |   Model ID                 | e.g. `openai/gpt-oss-20b`                        |
 
