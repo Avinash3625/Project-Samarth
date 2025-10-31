@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Project Samarth: Prototype (LM Studio)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/2.1.0/showdown.min.js"></script>
+  <!-- Optional: include DOMPurify to sanitize HTML produced from Markdown (recommended for security)
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/2.4.0/purify.min.js"></script>
+  -->
+  <style>
+    html,body{font-family:Inter, sans-serif; height:100%;}
+    #chat-history::-webkit-scrollbar{width:6px}
+    #chat-history::-webkit-scrollbar-track{background:#f1f5f9}
+    #chat-history::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:3px}
+    #chat-history::-webkit-scrollbar-thumb:hover{background:#64748b}
+  </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-full">
+  <div class="flex flex-col w-full max-w-4xl h-full md:h-[90vh] bg-white shadow-2xl rounded-lg overflow-hidden">
+    <div class="bg-white border-b border-gray-200 p-4 shadow-sm">
+      <h1 class="text-2xl font-bold text-center text-gray-800">Project Samarth: Intelligent Q&A System</h1>
+      <p class="text-sm text-center text-gray-500">AI-Powered Data Analyst Prototype (LM Studio)</p>
+    </div>
+
+    <div id="chat-history" class="flex-1 p-6 space-y-4 overflow-y-auto bg-gray-50">
+      <div class="chat-message assistant">
+        <div class="flex items-start">
+          <div class="flex-shrink-0 h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">AI</div>
+          <div class="ml-3 bg-blue-50 text-gray-800 p-4 rounded-r-lg rounded-bl-lg max-w-[80%]">
+            <p class="font-semibold">Project Samarth Assistant (Local)</p>
+            <p>Welcome! This prototype is configured to query a locally hosted LLM (LM Studio). Ask natural language questions about India's agriculture and climate.</p>
+            <p class="mt-2 text-sm text-gray-600">You can ask things like:</p>
+            <ul class="list-disc list-inside ml-2 mt-1 text-sm text-gray-600">
+              <li>"What was the total rice production in Maharashtra in 2020?"</li>
+              <li>"Compare rainfall in Pune and Mysuru for 2021."</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="thinking-indicator" class="p-4 bg-white border-t border-gray-200 hidden">
+      <div class="flex items-center space-x-2">
+        <div class="flex-shrink-0 h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center">
+          <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </div>
+        <div class="text-gray-500 italic">Analyzing data and synthesizing response...</div>
+      </div>
+    </div>
+
+    <div class="bg-white p-4 border-t border-gray-200">
+      <div class="flex space-x-3">
+        <input id="chat-input" type="text" class="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ask a question about India's agriculture and climate...">
+        <button id="send-button" class="bg-blue-600 text-white font-semibold px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">Send</button>
+      </div>
+      <p class="text-xs text-gray-600 mt-2">
+        ℹ️ LM Studio reachable at <code>http://192.168.29.200:5500</code> (per your LM Studio screenshot). If you see CORS issues, either enable CORS in LM Studio server settings or serve this page from a local HTTP server (e.g. <code>python -m http.server</code>).
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const chatHistory = document.getElementById('chat-history');
+    const chatInput = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send-button');
+    const thinkingIndicator = document.getElementById('thinking-indicator');
+    const markdownConverter = new showdown.Converter({ tables: true, simplifiedAutoLink: true });
+
+    // ===== LM Studio config (updated from screenshot) =====
+    // Address shown as "Reachable at: http://192.168.29.200:5500"
+    // Use that host:port and the OpenAI-like completion endpoint path.
+    const lmApiUrl = "http://192.168.29.200:5500/v1/chat/completions";
+    // Model id from the LM Studio UI in the screenshot
+    const LM_MODEL_NAME = "openai/gpt-oss-20b";
+    // =====================================================
+
+    const SYSTEM_PROMPT = `
+You are the "Intelligent Q&A Engine" for Project Samarth, an AI data analyst.
+Available mock datasets: df_crops (state_name,district_name,year,season,crop_name,production_tonnes)
+and df_rainfall (district_name,year,month,total_rainfall_mm).
+Respond in Markdown with three parts: Direct Natural Language Answer, Supporting Data (table), Sources.
+`;
+
+    let openAIMessages = [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: "Hello. Please strictly follow all instructions in the system prompt." },
+      { role: "assistant", content: "I am ready. I will act as the Project Samarth AI Data Analyst and provide answers in the specified 3-part Markdown format." }
+    ];
+
+    sendButton.addEventListener('click', handleSend);
+    chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } });
+
+    function escapeHtml(s) {
+      return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function addMessageToHistory(role, content, isMarkdown = false) {
+      const messageDiv = document.createElement('div');
+      messageDiv.classList.add('chat-message', role);
+
+      if (role === 'user') {
+        const safe = escapeHtml(content);
+        messageDiv.innerHTML = `
+          <div class="flex items-start justify-end">
+            <div class="mr-3 bg-blue-600 text-white p-4 rounded-l-lg rounded-br-lg max-w-[80%]">${safe}</div>
+            <div class="flex-shrink-0 h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center font-bold">U</div>
+          </div>`;
+      } else {
+        if (isMarkdown) {
+          let html = markdownConverter.makeHtml(content || "");
+          // OPTIONAL: sanitize with DOMPurify if available:
+          // if (window.DOMPurify) html = DOMPurify.sanitize(html);
+          messageDiv.innerHTML = `
+            <div class="flex items-start">
+              <div class="flex-shrink-0 h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">AI</div>
+              <div class="ml-3 bg-blue-50 text-gray-800 p-4 rounded-r-lg rounded-bl-lg max-w-[80%] prose prose-sm">${html}</div>
+            </div>`;
+        } else {
+          const safe = escapeHtml(content || "");
+          messageDiv.innerHTML = `
+            <div class="flex items-start">
+              <div class="flex-shrink-0 h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">AI</div>
+              <div class="ml-3 bg-blue-50 text-gray-800 p-4 rounded-r-lg rounded-bl-lg max-w-[80%] prose prose-sm"><p>${safe}</p></div>
+            </div>`;
+        }
+      }
+
+      chatHistory.appendChild(messageDiv);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    function handleSend() {
+      const userQuery = chatInput.value.trim();
+      if (!userQuery) return;
+      addMessageToHistory('user', userQuery);
+      openAIMessages.push({ role: "user", content: userQuery });
+      chatInput.value = "";
+      thinkingIndicator.classList.remove('hidden');
+      callLocalLLM();
+    }
+
+    async function callLocalLLM() {
+      const payload = {
+        model: LM_MODEL_NAME,
+        messages: openAIMessages,
+        temperature: 0.2,
+        max_tokens: 1024
+      };
+
+      try {
+        const res = await fetch(lmApiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(`Local LLM Error ${res.status}: ${txt}`);
+        }
+
+        let json;
+        try {
+          json = await res.json();
+        } catch (parseErr) {
+          const txt = await res.text();
+          throw new Error('Response was not JSON: ' + txt);
+        }
+
+        let modelResponse = "";
+
+        if (json.choices && json.choices.length > 0) {
+          const first = json.choices[0];
+          if (first.message && typeof first.message.content === 'string') {
+            modelResponse = first.message.content;
+          } else if (first.text) {
+            modelResponse = first.text;
+          } else if (first.delta && first.delta.content) {
+            modelResponse = first.delta.content;
+          } else {
+            modelResponse = JSON.stringify(first);
+          }
+        } else if (json.output && Array.isArray(json.output) && json.output[0]) {
+          const out = json.output[0];
+          if (typeof out === 'string') modelResponse = out;
+          else if (out.content && out.content[0] && out.content[0].text) modelResponse = out.content[0].text;
+          else modelResponse = JSON.stringify(out);
+        } else if (typeof json === 'string') {
+          modelResponse = json;
+        } else {
+          modelResponse = JSON.stringify(json);
+        }
+
+        openAIMessages.push({ role: "assistant", content: modelResponse });
+        addMessageToHistory('assistant', modelResponse, true);
+
+      } catch (err) {
+        console.error('Error contacting local LLM:', err);
+        addMessageToHistory('assistant', `❌ **Error contacting local model:** ${escapeHtml(err.message)}\n\nSuggestions:\n- Ensure LM Studio is running at ${lmApiUrl} (your screenshot shows it reachable at http://192.168.29.200:5500).\n- If you run into CORS errors, enable CORS in LM Studio server settings or serve this page from a local HTTP server (e.g. \`python -m http.server\`).\n- If LM Studio requires an auth token or a different endpoint path, update \`lmApiUrl\` and add the required headers.`, false);
+      } finally {
+        thinkingIndicator.classList.add('hidden');
+      }
+    }
+  </script>
+</body>
+</html>
